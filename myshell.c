@@ -16,8 +16,8 @@ void signal_handler(int signum);
 
 // What action to take when child processes expire
 struct sigaction child = {
-	.sa_handler = SIG_IGN,
-	.sa_flags = SA_NOCLDSTOP | SA_NOCLDWAIT
+	.sa_handler = SIG_DFL, // We want to be able to wait for child processes to wait
+	.sa_flags = SA_RESTART | SA_NOCLDWAIT // We want to avoid EINTR, and avoid processes from becoming zombies (relevant for the '&' case)
 };
 
 // What action to take when getting a SIGINT
@@ -79,13 +79,17 @@ int wait_for_child() {
     */
     int wait_return, wait_status, i;
     wait_return = waitpid(-1, &wait_status, 0); // wait for the first process to return
-    if ((wait_return >= 0) || (wait_return == ECHILD) || (wait_return != EINTR)) {
+    if ((wait_return >= 0) || (errno == ECHILD) || (errno == EINTR)) {
         // If one of the "good" cases was encountered, we remove the terminated child pid
         // from the list
 		for (i = 0; i < 2; i++) {
 			if (processes[i] == wait_return) {
 				processes[i] = 0;
 			}
+		}
+		// If we did encounter an error, we just return 0 instead of the PID
+		if (wait_return < 0) {
+			return 0;
 		}
         return wait_return;
     }
@@ -126,7 +130,7 @@ int pipe_programs(int count, int pipe_symbol_position, char** arglist) {
      * Piping 2 programs
     */
     int fd[2];
-    int first_proc_pid, second_proc_pid, dup2_status, close_status1, close_status2, stopped_pid;
+    int first_proc_pid, second_proc_pid, dup2_status, close_status1, close_status2;
     
     arglist[pipe_symbol_position] = NULL; // We remove the pipe symbol, and effectively split the arglist to 2 arglists
     
@@ -189,25 +193,17 @@ int pipe_programs(int count, int pipe_symbol_position, char** arglist) {
 	        }
 	        
 	        // We remove the first process that finished running
-	        stopped_pid = waitpid(-1, NULL, 0);
-	        if (processes[0] == stopped_pid) {
-	        	processes[0] = 0;
-	        }
-	        if (processes[1] == stopped_pid) {
-	        	processes[1] = 0;
-	        }
+	        if (wait_for_child() == -1) {
+	            return 0;
+    	    }
 	        // We remove the second process that finished running	        	        
-	        stopped_pid = waitpid(-1, NULL, 0);
-	        if (processes[0] == stopped_pid) {
-	        	processes[0] = 0;
-	        }
-	        if (processes[1] == stopped_pid) {
-	        	processes[1] = 0;
-	        }
+	        if (wait_for_child() == -1) {
+	            return 0;
+    	    }
 	        // We remove any process that we didn't already (due to an internal process error for example)
 	        processes[0] = 0;
    	        processes[1] = 0;
-            return 0;
+            return 1;
         }
     }
 }
@@ -323,6 +319,7 @@ int process_arglist(int count, char** arglist) {
 int prepare(void) {
 	processes[0] = 0;
 	processes[1] = 0;
+//	signal(SIGCHLD, SIG_IGN);
 	sigaction(SIGCHLD, &child, NULL); // We don't want SIGCHLD to kill the shell process
 	sigaction(SIGINT, &self, NULL);   // We set the custom handler for SIGINT
     return 0;
