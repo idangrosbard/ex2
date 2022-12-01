@@ -73,12 +73,12 @@ int child_identify_error(int status) {
 }
 
 
-int wait_for_child() {
+int wait_for_child(int pid) {
     /**
      * Waiting for a child process to return
     */
     int wait_return, wait_status, i;
-    wait_return = waitpid(-1, &wait_status, 0); // wait for the first process to return
+    wait_return = waitpid(pid, &wait_status, 0); // wait for the process to return
     if ((wait_return >= 0) || (errno == ECHILD) || (errno == EINTR)) {
         // If one of the "good" cases was encountered, we remove the terminated child pid
         // from the list
@@ -193,11 +193,11 @@ int pipe_programs(int count, int pipe_symbol_position, char** arglist) {
 	        }
 	        
 	        // We remove the first process that finished running
-	        if (wait_for_child() == -1) {
+	        if (wait_for_child(first_proc_pid) == -1) {
 	            return 0;
     	    }
 	        // We remove the second process that finished running	        	        
-	        if (wait_for_child() == -1) {
+	        if (wait_for_child(second_proc_pid) == -1) {
 	            return 0;
     	    }
 	        // We remove any process that we didn't already (due to an internal process error for example)
@@ -245,7 +245,7 @@ int program_output_redirection(int count, int redirect_symbol_position, char** a
     else {
         // We're in the parent process, waiting for the child process to finish running
     	processes[0] = pid;
-    	if (wait_for_child() == -1) {
+    	if (wait_for_child(pid) == -1) {
             return 0;
         }
     	processes[0] = 0;
@@ -274,7 +274,7 @@ int run_program(int count, char** arglist) {
     else {
     	processes[0] = pid;
         // Inside the parent process
-        if (wait_for_child() == -1) {
+        if (wait_for_child(pid) == -1) {
             return 0;
         }
     	processes[0] = 0;
